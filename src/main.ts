@@ -160,48 +160,96 @@ let physicsEnabled = false;
 
 // --- طبقة فيزياء الخلفية (Background Physics Layer - Anti-Gravity) ---
 const particles: { mesh: THREE.Mesh, body: CANNON.Body }[] = [];
-const particleCount = 20;
+const particleCount = 40; // زيادة العدد لتأثير أفضل
 
 const createBackgroundParticles = () => {
   const geometries = [
-    new THREE.IcosahedronGeometry(0.3, 0),
+    new THREE.IcosahedronGeometry(0.4, 0),
     new THREE.TorusGeometry(0.3, 0.1, 16, 100),
-    new THREE.OctahedronGeometry(0.3, 0)
+    new THREE.OctahedronGeometry(0.3, 0),
+    new THREE.BoxGeometry(0.5, 0.5, 0.5)
   ];
   
   const material = new THREE.MeshPhysicalMaterial({
     color: '#0055ff',
-    metalness: 0.8,
-    roughness: 0.2,
+    metalness: 0.9,
+    roughness: 0.1,
     transparent: true,
-    opacity: 0.6, // شبه شفافة لكي لا تزعج النظر
+    opacity: 0.4, // شفافة أكثر لتبدو كخلفية
+    clearcoat: 1.0,
   });
 
   for (let i = 0; i < particleCount; i++) {
     const geo = geometries[Math.floor(Math.random() * geometries.length)];
     const mesh = new THREE.Mesh(geo, material);
     
-    // موقع عشوائي في الفضاء
-    const x = (Math.random() - 0.5) * 15;
-    const y = (Math.random() - 0.5) * 15;
-    const z = (Math.random() - 0.5) * 5 - 2; // خلف البطاقات قليلاً
+    // موقع عشوائي في الفضاء يغطي الشاشة
+    const x = (Math.random() - 0.5) * 20;
+    const y = (Math.random() - 0.5) * 20;
+    const z = (Math.random() - 0.5) * 10 - 5; // أعمق في الخلفية
     
     mesh.position.set(x, y, z);
     scene.add(mesh);
 
     const body = new CANNON.Body({
-      mass: 0.1, // خفيفة جداً
-      shape: new CANNON.Sphere(0.4),
+      mass: 0.05, // خفيفة جداً لتطفو ببطء
+      shape: new CANNON.Sphere(0.5),
       position: new CANNON.Vec3(x, y, z),
-      linearDamping: 0.1,
-      angularDamping: 0.1
+      linearDamping: 0.4, // مقاومة هواء عالية لتبدو كأنها تسبح في سائل
+      angularDamping: 0.4
     });
+    
+    // إعطاء سرعة ابتدائية عشوائية بطيئة
+    body.velocity.set(
+      (Math.random() - 0.5),
+      (Math.random() - 0.5) * 2, // حركة أسرع قليلاً للأعلى/الأسفل
+      (Math.random() - 0.5)
+    );
+    
+    body.angularVelocity.set(
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2
+    );
     
     world.addBody(body);
     particles.push({ mesh, body });
   }
 };
 createBackgroundParticles();
+
+// تفاعل الماوس مع جسيمات الخلفية (Mouse Repulsion/Attraction)
+const mouseVector2D = new THREE.Vector2();
+
+window.addEventListener('mousemove', (event) => {
+  // تحويل إحداثيات الشاشة إلى إحداثيات Three.js (-1 إلى 1)
+  mouseVector2D.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouseVector2D.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+  // استخدام Raycaster لإيجاد نقطة التقاطع في الفضاء
+  raycaster.setFromCamera(mouseVector2D, camera);
+  const targetZ = -5; // عمق الجسيمات
+  const distance = (targetZ - camera.position.z) / raycaster.ray.direction.z;
+  const intersectPoint = camera.position.clone().add(raycaster.ray.direction.multiplyScalar(distance));
+
+  // تطبيق قوة تنافر (Repulsion) على الجسيمات القريبة
+  particles.forEach(p => {
+    const pPos = new THREE.Vector3(p.body.position.x, p.body.position.y, p.body.position.z);
+    const dist = pPos.distanceTo(intersectPoint);
+    
+    if (dist < 4.0) { // نصف قطر التأثير
+      // حساب اتجاه القوة (من الماوس للجسيم)
+      const forceDir = pPos.sub(intersectPoint).normalize();
+      // قوة التنافر تزيد كلما اقترب الماوس
+      const forceMagnitude = (4.0 - dist) * 0.5;
+      
+      p.body.applyImpulse(
+        new CANNON.Vec3(forceDir.x * forceMagnitude, forceDir.y * forceMagnitude, forceDir.z * forceMagnitude),
+        p.body.position
+      );
+    }
+  });
+});
 
 // --- نظام التنقل (Navigation & Scroll-jacking) ---
 let currentSection = 'hero';
@@ -222,10 +270,13 @@ const navigateTo = (sectionId: string) => {
 
   // تحديث حالة الفيزياء بناءً على القسم
   if (sectionId === 'products') {
-    // تفعيل الجاذبية والفيزياء في قسم المنتجات
-    if (!physicsEnabled && cards.length > 0) {
-       enablePhysics();
+    // تفعيل الجاذبية والفيزياء في قسم المنتجات وبدء حركة الدخول إذا لم تحدث مسبقاً
+    if (!cardsEntranceDone && cards.length > 0) {
+      animateEntrance();
+    } else if (cardsEntranceDone && !physicsEnabled) {
+      enablePhysics();
     }
+    
     // إخفاء تأثير الضباب إذا كان موجوداً
     canvasElement.classList.remove('blurred');
   } else {
@@ -289,9 +340,10 @@ const initCards = async () => {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     
-    // وضع البطاقة خارج الشاشة في البداية (للأعلى)
-    mesh.position.set(0, 15, 0);
+    // وضع البطاقة خارج الشاشة في البداية (للأعلى بعيداً جداً) ومخفية
+    mesh.position.set(0, 30, 0);
     mesh.rotation.set(Math.PI, 0, 0); // مقلوبة في البداية
+    mesh.visible = false; // إخفاء البطاقات في البداية
     
     scene.add(mesh);
 
@@ -299,7 +351,7 @@ const initCards = async () => {
     const body = new CANNON.Body({
       mass: 1 + Math.random() * 2, // كتلة متغيرة قليلاً لتعطي تنوعاً في الحركة
       shape: new CANNON.Box(new CANNON.Vec3(1, 1.5, 0.1)),
-      position: new CANNON.Vec3(0, 15, 0), // نفس الموضع المبدئي
+      position: new CANNON.Vec3(0, 30, 0), // نفس الموضع المبدئي
       material: boxPhysMaterial,
       linearDamping: 0.5,
       angularDamping: 0.5
@@ -314,20 +366,31 @@ const initCards = async () => {
     loading.style.opacity = '0';
     setTimeout(() => {
       loading.style.display = 'none';
-      // بدء حركة الدخول بعد إخفاء شاشة التحميل
-      animateEntrance();
+      // تم إزالة استدعاء animateEntrance() من هنا
+      // ستظهر البطاقات فقط عند الوصول لقسم المنتجات
     }, 500); // توافق مع تأثير الـ CSS transition
   }
 };
 
+// متغير لتتبع ما إذا كانت حركة الدخول قد حدثت بالفعل لتجنب تكرارها
+let cardsEntranceDone = false;
+
 // حركة الدخول والترتيب (Entrance Animation)
 const animateEntrance = () => {
+  if (cardsEntranceDone) return;
+  cardsEntranceDone = true;
+
   cards.forEach((card, index) => {
+    card.mesh.visible = true; // إظهار البطاقة قبل بدء الحركة
+    
     // استخدام المسار العمودي (trackX) المخصص لكل فئة
     // تم تمرير الـ trackX من الـ Backend
     const targetX = card.data.trackX !== undefined ? card.data.trackX : 0;
     const targetY = 2 + (Math.random() - 0.5) * 4; // توزيع عشوائي طفيف على محور Y ضمن المسار العمودي
     const targetZ = 0;
+
+    // وضع ابتدائي للبطاقة قبل الحركة (تأتي من الأعلى)
+    card.mesh.position.set(targetX, 15 + Math.random() * 5, targetZ);
 
     // استخدام GSAP لتحريك الـ Mesh
     gsap.to(card.mesh.position, {
@@ -335,8 +398,8 @@ const animateEntrance = () => {
       y: targetY,
       z: targetZ,
       duration: 1.5,
-      delay: index * 0.2, // دخول متتالي (واحدة تلو الأخرى)
-      ease: "power3.out"
+      delay: index * 0.15, // دخول أسرع قليلاً
+      ease: "back.out(1.2)" // تأثير ارتداد خفيف وممتع
     });
 
     gsap.to(card.mesh.rotation, {
@@ -344,13 +407,13 @@ const animateEntrance = () => {
       y: Math.PI * 2, // دورة كاملة مبهرة
       z: 0, // إلغاء الميلان العشوائي في وضع الـ Grid
       duration: 1.5,
-      delay: index * 0.2,
+      delay: index * 0.15,
       ease: "power3.out",
       onComplete: () => {
         // بعد انتهاء حركة آخر بطاقة
         if (index === cards.length - 1) {
-          // ننتظر ثانيتين ليقرأ المستخدم البطاقات، ثم نفعل الفيزياء (التي تم تعديلها للعمل كمسارات عمودية)
-          setTimeout(enablePhysics, 2000);
+          // ننتظر ثانية ليقرأ المستخدم البطاقات، ثم نفعل الفيزياء (التي تم تعديلها للعمل كمسارات عمودية)
+          setTimeout(enablePhysics, 1000);
         }
       }
     });
