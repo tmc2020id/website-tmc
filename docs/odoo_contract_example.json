@@ -1,0 +1,21 @@
+{
+  "status": "success",
+  "data": [
+    {
+      "id": 101,
+      "name": "Smart Camera System",
+      "price": 250.00,
+      "description": "AI-enabled security camera solution for smart homes.",
+      "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "category": "Security"
+    },
+    {
+      "id": 102,
+      "name": "Advanced Web App",
+      "price": 1200.00,
+      "description": "High-performance web applications built with modern technologies.",
+      "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "category": "Software"
+    }
+  ]
+}
