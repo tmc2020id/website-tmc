@@ -1,15 +1,44 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Website TMC - 3D Engine</title>
+    <!-- استيراد خط تجريبي (مثال: Cairo من Google Fonts) -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
   </head>
   <body>
     <div id="app">
-      <div id="loading" class="loading">Loading 3D Engine...</div>
+      <!-- حاوية الرسوميات ثلاثية الأبعاد -->
       <canvas id="webgl-canvas"></canvas>
+      
+      <!-- طبقة واجهة المستخدم (UI Layer) -->
+      <div id="ui-layer">
+        <header class="ui-header">
+          <div class="logo">TMC Smart</div>
+          <nav>
+            <button class="nav-btn">تواصل معنا</button>
+          </nav>
+        </header>
+
+        <div class="scroll-indicator">
+          <span>مرر للأسفل</span>
+          <div class="mouse-icon"></div>
+        </div>
+
+        <!-- النافذة المنبثقة (Modal) لعرض تفاصيل البطاقة -->
+        <div id="card-modal" class="modal hidden">
+          <div class="modal-content">
+            <h2 id="modal-title">اسم الخدمة</h2>
+            <p id="modal-desc">وصف الخدمة سيظهر هنا بناءً على البطاقة المحددة.</p>
+            <div class="modal-price" id="modal-price">0.00 ر.س</div>
+            <button class="cta-btn" id="modal-close">إغلاق</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="loading" class="loading">جاري تحميل بيئة TMC...</div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
