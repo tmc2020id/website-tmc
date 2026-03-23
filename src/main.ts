@@ -372,7 +372,7 @@ window.addEventListener('pointermove', (e) => {
   }
 });
 
-window.addEventListener('pointerup', (e) => {
+window.addEventListener('pointerup', () => {
   if (isDragging && selectedBody) {
       // إزالة التأثير البصري
       const cardData = cards.find(c => c.body === selectedBody);
