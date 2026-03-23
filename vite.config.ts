@@ -36,10 +36,16 @@ export default defineConfig({
     rollupOptions: {
       treeshake: true, // تفعيل Tree Shaking لتقليل حجم الحزمة (مهم جداً لـ Three.js)
       output: {
-        manualChunks: {
-          // فصل مكتبات 3D في ملفات منفصلة لتحسين أداء التحميل
-          three: ['three'],
-          cannon: ['cannon-es']
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('three')) {
+              return 'three';
+            }
+            if (id.includes('cannon-es')) {
+              return 'cannon-es';
+            }
+            return 'vendor'; // للمكتبات الأخرى
+          }
         }
       }
     }

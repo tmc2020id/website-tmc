@@ -1,41 +1,80 @@
 import './style.css';
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 // إعداد المشهد الأساسي
 const canvas = document.querySelector('#webgl-canvas') as HTMLCanvasElement;
 const loading = document.querySelector('#loading') as HTMLDivElement;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#111');
+// سيتم تعيين الخلفية لاحقاً لتكون شفافة أو متناسبة مع لون الموقع
+scene.background = new THREE.Color('#f5f5f7'); 
 
 // الكاميرا
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(0, 5, 10);
+camera.position.set(0, 0, 10); // تغيير موقع الكاميرا لتكون مواجهة للـ Z axis مباشرة
 camera.lookAt(0, 0, 0);
 
 // المصير (Renderer)
 const renderer = new THREE.WebGLRenderer({
   canvas: canvas,
-  antialias: true
+  antialias: true,
+  alpha: true // جعل الخلفية شفافة لدمجها مع الـ CSS
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// تفعيل إعدادات الإضاءة الفيزيائية الصحيحة
+// renderer.useLegacyLights = false; // تم إزالتها في الإصدارات الأحدث من Three.js لأنها أصبحت الافتراضية
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-// الإضاءة
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-scene.add(ambientLight);
+// --- الخطوة 1: بناء نظام الإضاءة السينمائية ---
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+pmremGenerator.compileEquirectangularShader();
+// إنشاء بيئة الاستوديو الافتراضية
+const environment = new RoomEnvironment();
+const envMap = pmremGenerator.fromScene(environment).texture;
+scene.environment = envMap; // تطبيق الإضاءة البيئية على المشهد
+environment.dispose();
 
-const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+// إضاءة إضافية لتعزيز الظلال
+const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
 directionalLight.position.set(5, 10, 5);
 directionalLight.castShadow = true;
+directionalLight.shadow.mapSize.width = 1024;
+directionalLight.shadow.mapSize.height = 1024;
 scene.add(directionalLight);
 
 // إعداد محرك الفيزياء (Cannon.js)
 const world = new CANNON.World({
-  gravity: new CANNON.Vec3(0, -9.82, 0),
+  gravity: new CANNON.Vec3(0, -9.82, 0), // جاذبية ابتدائية طبيعية
 });
+
+// متغيرات للتحكم بالجاذبية عبر التمرير (Scroll)
+let targetGravityY = -9.82;
+let currentScrollProgress = 0;
+
+// الاستماع لحدث التمرير لحساب النسبة المئوية
+window.addEventListener('scroll', () => {
+  const maxScroll = document.body.scrollHeight - window.innerHeight;
+  if (maxScroll > 0) {
+    currentScrollProgress = window.scrollY / maxScroll;
+  } else {
+    currentScrollProgress = 0;
+  }
+  
+  // تحويل النسبة (0 إلى 1) إلى جاذبية (من -9.82 إلى +2 مثلاً)
+  // إذا كان التمرير 0 -> الجاذبية -9.82 (سقوط)
+  // إذا كان التمرير 0.5 -> الجاذبية 0 (انعدام وزن)
+  // إذا كان التمرير 1 -> الجاذبية +2 (طفو خفيف للأعلى)
+  targetGravityY = THREE.MathUtils.lerp(-9.82, 2, currentScrollProgress);
+});
+
+// لجعل الصفحة قابلة للتمرير للاختبار
+document.body.style.height = '300vh';
 
 // إعداد خامة (Material) للحوائط والمكعبات للتحكم بالارتداد
 const wallMaterial = new CANNON.Material('wallMaterial');
@@ -72,30 +111,70 @@ const rightWall = createWall(0, wallThickness, 1, 1);
 const backWall = createWall(0, 1, 1, wallThickness);
 const frontWall = createWall(0, 1, 1, wallThickness); // حائط أمامي إضافي لمنع المكعب من السقوط باتجاه الكاميرا
 
-// إنشاء أرضية مرئية فقط (تم استبدال الأرضية الفيزيائية بنظام الحوائط)
-const groundGeometry = new THREE.PlaneGeometry(20, 20);
-const groundVisualMaterial = new THREE.MeshStandardMaterial({ color: '#444' });
-const groundMesh = new THREE.Mesh(groundGeometry, groundVisualMaterial);
-groundMesh.rotation.x = -Math.PI / 2;
-groundMesh.receiveShadow = true;
-scene.add(groundMesh);
+// --- الخطوة 2: إكساء المجسمات بالهوية البصرية (TextureManager) ---
+const textureLoader = new THREE.TextureLoader();
 
-// إنشاء مكعب يتأثر بالفيزياء
-const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
-const boxVisualMaterial = new THREE.MeshStandardMaterial({ color: '#ff0000' });
-const boxMesh = new THREE.Mesh(boxGeometry, boxVisualMaterial);
-boxMesh.castShadow = true;
-scene.add(boxMesh);
+// دالة محاكاة لجلب الصور من Odoo لاحقاً
+const loadServiceTexture = (url: string) => {
+  const texture = textureLoader.load(url);
+  texture.colorSpace = THREE.SRGBColorSpace; // تصحيح الألوان
+  return texture;
+};
 
-const boxBody = new CANNON.Body({
+// إنشاء مادة فيزيائية متقدمة للبطاقات
+const createCardMaterial = (color: string, textureUrl?: string) => {
+  return new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(color),
+    metalness: 0.1, // معدنية خفيفة
+    roughness: 0.2, // لمعان عالي كالزجاج أو البلاستيك المصقول
+    clearcoat: 1.0, // طبقة طلاء لامعة
+    clearcoatRoughness: 0.1,
+    map: textureUrl ? loadServiceTexture(textureUrl) : null,
+  });
+};
+
+// إنشاء أرضية مرئية (مخفية الآن لأننا نعتمد على الحوائط غير المرئية والخلفية)
+// قمنا بإزالتها لتركيز الانتباه على البطاقات المطفية في الفضاء
+
+// إنشاء مجسمات "بطاقات الخدمات" بدلاً من مكعب واحد
+const cards: { mesh: THREE.Mesh, body: CANNON.Body }[] = [];
+const cardGeometry = new THREE.BoxGeometry(2, 3, 0.2); // شكل يشبه بطاقة أو هاتف
+
+// بطاقة تجريبية 1
+const card1Material = createCardMaterial('#ffffff'); // أبيض لامع
+const card1Mesh = new THREE.Mesh(cardGeometry, card1Material);
+card1Mesh.castShadow = true;
+card1Mesh.receiveShadow = true;
+scene.add(card1Mesh);
+
+const card1Body = new CANNON.Body({
   mass: 1, // الكتلة < 10
-  shape: new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5)),
-  position: new CANNON.Vec3(0, 5, 0),
+  shape: new CANNON.Box(new CANNON.Vec3(1, 1.5, 0.1)),
+  position: new CANNON.Vec3(-2, 5, 0),
   material: boxPhysMaterial,
   linearDamping: 0.5,
   angularDamping: 0.5
 });
-world.addBody(boxBody);
+world.addBody(card1Body);
+cards.push({ mesh: card1Mesh, body: card1Body });
+
+// بطاقة تجريبية 2 (هوية TMC)
+const card2Material = createCardMaterial('#0055ff'); // أزرق TMC
+const card2Mesh = new THREE.Mesh(cardGeometry, card2Material);
+card2Mesh.castShadow = true;
+card2Mesh.receiveShadow = true;
+scene.add(card2Mesh);
+
+const card2Body = new CANNON.Body({
+  mass: 2, // كتلة أكبر قليلاً
+  shape: new CANNON.Box(new CANNON.Vec3(1, 1.5, 0.1)),
+  position: new CANNON.Vec3(2, 8, 0),
+  material: boxPhysMaterial,
+  linearDamping: 0.5,
+  angularDamping: 0.5
+});
+world.addBody(card2Body);
+cards.push({ mesh: card2Mesh, body: card2Body });
 
 // --- دالة تحديث حدود الشاشة ---
 const updatePhysicsWalls = () => {
@@ -195,31 +274,34 @@ const removeMouseConstraint = () => {
 };
 
 // الأحداث (Events)
-const meshesToRaycast = [boxMesh]; // الأجسام التي يمكن التفاعل معها
+const meshesToRaycast = cards.map(c => c.mesh); // الأجسام التي يمكن التفاعل معها
 
 window.addEventListener('pointerdown', (e) => {
   const hit = getHitPoint(e.clientX, e.clientY, meshesToRaycast, interactionPlane!) as THREE.Intersection;
   
   if (hit) {
     const mesh = hit.object as THREE.Mesh;
-    // العثور على الـ Body المقابل (في حالتنا لدينا مكعب واحد)
-    if (mesh === boxMesh && boxBody.mass < 10) {
+    // العثور على الـ Body المقابل
+    const cardData = cards.find(c => c.mesh === mesh);
+    
+    if (cardData && cardData.body.mass < 10) {
       isDragging = true;
-      selectedBody = boxBody;
+      selectedBody = cardData.body;
       
       // إيقاف السرعة لتجنب الحركات العشوائية عند الإمساك
-      boxBody.velocity.set(0, 0, 0);
-      boxBody.angularVelocity.set(0, 0, 0);
+      selectedBody.velocity.set(0, 0, 0);
+      selectedBody.angularVelocity.set(0, 0, 0);
 
       // تحديد موقع وميل المستوى الوهمي ليكون مواجهاً للكاميرا ويمر بمركز الجسم
       interactionPlane!.position.copy(mesh.position);
       interactionPlane!.quaternion.copy(camera.quaternion);
 
-      addMouseConstraint(hit.point.x, hit.point.y, hit.point.z, boxBody);
+      addMouseConstraint(hit.point.x, hit.point.y, hit.point.z, selectedBody);
       
       // تغيير لون المؤشر (Visual Feedback)
       document.body.style.cursor = 'grabbing';
-      (boxMesh.material as THREE.MeshStandardMaterial).color.set('#ff5555');
+      // تأثير بصري خفيف عند الإمساك
+      (mesh.material as THREE.MeshPhysicalMaterial).emissive.set('#222222');
     }
   }
 });
@@ -234,8 +316,13 @@ window.addEventListener('pointermove', (e) => {
   } else {
     // Hover Effect
     const hit = getHitPoint(e.clientX, e.clientY, meshesToRaycast, interactionPlane!) as THREE.Intersection;
-    if (hit && hit.object === boxMesh && boxBody.mass < 10) {
-      document.body.style.cursor = 'grab';
+    if (hit) {
+       const cardData = cards.find(c => c.mesh === hit.object);
+       if(cardData && cardData.body.mass < 10) {
+          document.body.style.cursor = 'grab';
+       } else {
+          document.body.style.cursor = 'auto';
+       }
     } else {
       document.body.style.cursor = 'auto';
     }
@@ -243,11 +330,17 @@ window.addEventListener('pointermove', (e) => {
 });
 
 window.addEventListener('pointerup', () => {
+  if (isDragging && selectedBody) {
+      // إزالة التأثير البصري
+      const cardData = cards.find(c => c.body === selectedBody);
+      if(cardData) {
+          (cardData.mesh.material as THREE.MeshPhysicalMaterial).emissive.set('#000000');
+      }
+  }
   isDragging = false;
   selectedBody = null;
   removeMouseConstraint();
   document.body.style.cursor = 'auto';
-  (boxMesh.material as THREE.MeshStandardMaterial).color.set('#ff0000');
 });
 
 // إخفاء رسالة التحميل
@@ -264,15 +357,31 @@ const tick = () => {
   const deltaTime = elapsedTime - oldElapsedTime;
   oldElapsedTime = elapsedTime;
 
+  // استيفاء (Lerp) ناعم للجاذبية الحالية لتصل للهدف المستخلص من التمرير
+  world.gravity.y = THREE.MathUtils.lerp(world.gravity.y, targetGravityY, 0.05);
+
+  // تحديث مقاومة الهواء (linearDamping) بناءً على الجاذبية الحالية
+  // كلما اقتربت الجاذبية من الصفر، زادت مقاومة الهواء لمحاكاة انعدام الوزن أو الطفو في الماء
+  const isZeroGravity = Math.abs(world.gravity.y) < 2.0;
+  
+  for(const card of cards) {
+    if (isZeroGravity) {
+        card.body.linearDamping = THREE.MathUtils.lerp(card.body.linearDamping, 0.8, 0.05);
+        card.body.angularDamping = THREE.MathUtils.lerp(card.body.angularDamping, 0.8, 0.05);
+    } else {
+        card.body.linearDamping = THREE.MathUtils.lerp(card.body.linearDamping, 0.1, 0.05);
+        card.body.angularDamping = THREE.MathUtils.lerp(card.body.angularDamping, 0.1, 0.05);
+    }
+  }
+
   // تحديث الفيزياء
   world.step(1 / 60, deltaTime, 3);
 
-  // تحديث الرسوميات بناءً على الفيزياء
-  boxMesh.position.copy(boxBody.position as any);
-  boxMesh.quaternion.copy(boxBody.quaternion as any);
-
-  // إضافة حركة دوران بسيطة للمكعب (سنقوم بتعطيلها لاحقاً إذا أردنا تحكماً كاملاً بالماوس، ولكن نتركها الآن للمتعة)
-  // boxMesh.rotation.y += 0.01;
+  // تحديث الرسوميات بناءً على الفيزياء لجميع البطاقات
+  for(const card of cards) {
+    card.mesh.position.copy(card.body.position as any);
+    card.mesh.quaternion.copy(card.body.quaternion as any);
+  }
 
   // Render
   renderer.render(scene, camera);
