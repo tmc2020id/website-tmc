@@ -4,17 +4,66 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Website TMC - 3D Engine</title>
-    <!-- استيراد خط تجريبي (مثال: Cairo من Google Fonts) -->
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+    <title>TMC Smart - Your Keys For Business</title>
+    <!-- Google Fonts: Cairo for Arabic -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800&display=swap" rel="stylesheet">
   </head>
   <body>
     <div id="app">
-      <!-- حاوية الرسوميات ثلاثية الأبعاد -->
+      <!-- حاوية الثري دي -->
       <canvas id="webgl-canvas"></canvas>
       
-      <!-- طبقة واجهة المستخدم (UI Layer - SPA Structure) -->
-      <div id="ui-layer">
+      <!-- الواجهة الخادعة (The HTML Illusion) - ستختفي عند الانهيار -->
+      <div id="html-illusion-layer">
+        
+        <!-- الهيدر (الشعار وأزرار التنقل) -->
+        <header class="classic-header physical-element" data-mass="2">
+          <div class="logo">TMC Smart</div>
+          <nav>
+            <a href="#" class="nav-link physical-element" data-mass="1">الرئيسية</a>
+            <a href="#" class="nav-link physical-element" data-mass="1">الخدمات</a>
+            <a href="#" class="nav-link physical-element" data-mass="1">من نحن</a>
+            <a href="#" class="nav-link physical-element" data-mass="1">اتصل بنا</a>
+          </nav>
+        </header>
+
+        <!-- المحتوى الرئيسي -->
+        <main class="classic-main">
+          <!-- شريط بحث وهمي -->
+          <div class="search-container physical-element" data-mass="1.5">
+            <input type="text" class="search-input" placeholder="ابحث في TMC Smart..." readonly>
+            <button class="search-btn">بحث</button>
+          </div>
+
+          <!-- بطاقات خدمات وهمية (Classic Grid) -->
+          <div class="classic-grid">
+            <div class="classic-card physical-element" data-mass="3">
+              <div class="card-icon">🌐</div>
+              <h3>حلول الشبكات</h3>
+              <p>بنية تحتية متطورة لشركتك</p>
+            </div>
+            <div class="classic-card physical-element" data-mass="3">
+              <div class="card-icon">💻</div>
+              <h3>تطوير الويب</h3>
+              <p>تطبيقات سريعة وآمنة</p>
+            </div>
+            <div class="classic-card physical-element" data-mass="3">
+              <div class="card-icon">📊</div>
+              <h3>أنظمة Odoo</h3>
+              <p>إدارة متكاملة لأعمالك</p>
+            </div>
+          </div>
+        </main>
+        
+        <!-- تلميح للمستخدم -->
+        <div class="hint-text physical-element" data-mass="0.5">
+          حرك الماوس أو انقر لتجربة سحر TMC
+        </div>
+
+      </div>
+
+      <!-- طبقة واجهة المستخدم (UI Layer - SPA Structure) - مخفية في البداية -->
+      <div id="ui-layer" style="display: none;">
         <header class="ui-header">
           <div class="logo">TMC Smart</div>
           <nav>

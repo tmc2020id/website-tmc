@@ -1,25 +1,25 @@
 :root {
   --tmc-blue: #0055ff;
   --tmc-orange: #ff6b00;
+  --bg-color: #f5f7fa;
   --text-main: #333333;
   --glass-bg: rgba(255, 255, 255, 0.85);
-  --glass-border: rgba(255, 255, 255, 0.4);
+  --glass-border: rgba(255, 255, 255, 0.5);
 }
 
 body {
   margin: 0;
   padding: 0;
-  overflow-x: hidden;
-  /* overflow-y: auto will be managed by JS for the scroll effect */
-  background-color: #f5f5f7;
-  color: var(--text-main);
   font-family: 'Cairo', sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  overflow: hidden; /* لمنع التمرير */
 }
 
 #app {
+  position: relative;
   width: 100vw;
   height: 100vh;
-  position: relative;
 }
 
 #webgl-canvas {
@@ -31,6 +31,7 @@ body {
   z-index: 1; /* خلف الـ UI */
   outline: none;
   transition: filter 0.3s ease; /* تأثير ناعم عند تطبيق الضباب */
+  pointer-events: auto; /* السماح بالتفاعل مع الـ Canvas */
 }
 
 /* فئة الضباب (تُضاف برمجياً عند فتح النافذة) */
@@ -38,7 +39,139 @@ body {
   filter: blur(8px) brightness(0.8);
 }
 
-/* طبقة واجهة المستخدم */
+/* =========================================
+   الواجهة الخادعة (The HTML Illusion)
+   ========================================= */
+#html-illusion-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 50; /* فوق كل شيء في البداية */
+  background-color: var(--bg-color);
+  display: flex;
+  flex-direction: column;
+  transition: opacity 0.5s ease; /* للاختفاء بسلاسة عند الانهيار */
+}
+
+.classic-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 4rem;
+  background: white;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+.classic-header .logo {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--tmc-blue);
+  display: inline-block;
+  padding: 0.5rem;
+}
+
+.classic-header nav {
+  display: flex;
+  gap: 2rem;
+}
+
+.nav-link {
+  text-decoration: none;
+  color: var(--text-main);
+  font-weight: 700;
+  font-size: 1.1rem;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  display: inline-block;
+}
+
+.classic-main {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.search-container {
+  display: flex;
+  width: 100%;
+  max-width: 600px;
+  margin-bottom: 4rem;
+  box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+  border-radius: 50px;
+  overflow: hidden;
+  background: white;
+}
+
+.search-input {
+  flex-grow: 1;
+  border: none;
+  padding: 1.5rem 2rem;
+  font-size: 1.2rem;
+  font-family: 'Cairo', sans-serif;
+  outline: none;
+}
+
+.search-btn {
+  background: var(--tmc-blue);
+  color: white;
+  border: none;
+  padding: 0 3rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+}
+
+.classic-grid {
+  display: flex;
+  gap: 2rem;
+  max-width: 1000px;
+  width: 100%;
+}
+
+.classic-card {
+  flex: 1;
+  background: white;
+  padding: 2.5rem 2rem;
+  border-radius: 16px;
+  text-align: center;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+  border: 1px solid #eee;
+}
+
+.card-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.classic-card h3 {
+  color: var(--tmc-blue);
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
+.classic-card p {
+  color: #666;
+  margin: 0;
+}
+
+.hint-text {
+  text-align: center;
+  color: #999;
+  font-size: 1.1rem;
+  padding: 2rem;
+  display: inline-block;
+  margin: 0 auto;
+}
+
+/* =========================================
+   UI Layer (SPA) - القديم والمُحسن
+   ========================================= */
 #ui-layer {
   position: fixed;
   top: 0;

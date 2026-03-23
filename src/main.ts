@@ -3,9 +3,10 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import gsap from 'gsap';
+import html2canvas from 'html2canvas';
 
-// إعداد المشهد الأساسي
-const canvas = document.querySelector('#webgl-canvas') as HTMLCanvasElement;
+// --- إعداد المشهد الأساسي ---
+const canvas = document.getElementById('webgl-canvas') as HTMLCanvasElement;
 const loading = document.querySelector('#loading') as HTMLDivElement;
 
 const scene = new THREE.Scene();
@@ -158,7 +159,182 @@ const createCardMaterial = (base64Texture?: string) => {
 // متغير للتحكم بتفعيل الفيزياء (يبدأ كـ false حتى ينتهي ترتيب البطاقات)
 let physicsEnabled = false;
 
-// --- طبقة فيزياء الخلفية (Background Physics Layer - Anti-Gravity) ---
+// --- قفص الشاشة (Screen Boundaries) لمنع العناصر من السقوط للخارج ---
+const createScreenBoundaries = () => {
+  // إنشاء حوائط غير مرئية
+  const wallMaterial = new CANNON.Material();
+  const thickness = 1;
+  const width = 30; // عرض مبدئي كبير
+  const height = 30; // ارتفاع مبدئي كبير
+
+  const walls = {
+    floor: new CANNON.Body({ mass: 0, material: wallMaterial, shape: new CANNON.Box(new CANNON.Vec3(width, thickness, width)) }),
+    ceiling: new CANNON.Body({ mass: 0, material: wallMaterial, shape: new CANNON.Box(new CANNON.Vec3(width, thickness, width)) }),
+    left: new CANNON.Body({ mass: 0, material: wallMaterial, shape: new CANNON.Box(new CANNON.Vec3(thickness, height, width)) }),
+    right: new CANNON.Body({ mass: 0, material: wallMaterial, shape: new CANNON.Box(new CANNON.Vec3(thickness, height, width)) })
+  };
+
+  world.addBody(walls.floor);
+  world.addBody(walls.ceiling);
+  world.addBody(walls.left);
+  world.addBody(walls.right);
+
+  const updateBoundaries = () => {
+    // حساب حدود الشاشة في عالم Three.js بناءً على الكاميرا
+    const vFov = camera.fov * Math.PI / 180;
+    const visibleHeight = 2 * Math.tan(vFov / 2) * Math.abs(camera.position.z);
+    const visibleWidth = visibleHeight * camera.aspect;
+
+    // تحديث مواقع الحوائط
+    walls.floor.position.set(0, -visibleHeight / 2 - thickness, 0);
+    walls.ceiling.position.set(0, visibleHeight / 2 + thickness, 0);
+    walls.left.position.set(-visibleWidth / 2 - thickness, 0, 0);
+    walls.right.position.set(visibleWidth / 2 + thickness, 0, 0);
+  };
+
+  updateBoundaries();
+  window.addEventListener('resize', updateBoundaries);
+};
+
+createScreenBoundaries();
+
+// --- الواجهة الخادعة وتحويلها لـ 3D (The HTML Illusion & Mapping) ---
+const physicalElements: { mesh: THREE.Mesh, body: CANNON.Body, element: HTMLElement }[] = [];
+let isIllusionBroken = false;
+
+// دالة لتحويل إحداثيات المتصفح (Pixels) إلى إحداثيات Three.js (World Units)
+const getThreePosition = (clientX: number, clientY: number, width: number, height: number) => {
+  // حساب الموضع في المنتصف بالنسبة للشاشة
+  const centerX = clientX + width / 2;
+  const centerY = clientY + height / 2;
+
+  // تحويل لـ Normalized Device Coordinates (-1 to +1)
+  const x = (centerX / window.innerWidth) * 2 - 1;
+  const y = -(centerY / window.innerHeight) * 2 + 1;
+
+  // تحويل للـ World Coordinates بناءً على الكاميرا (بافتراض z=0)
+  const vec = new THREE.Vector3(x, y, 0.5);
+  vec.unproject(camera);
+  const dir = vec.sub(camera.position).normalize();
+  const distance = -camera.position.z / dir.z;
+  const pos = camera.position.clone().add(dir.multiplyScalar(distance));
+
+  // حساب الحجم في الـ World Units
+  const vFov = camera.fov * Math.PI / 180;
+  const visibleHeight = 2 * Math.tan(vFov / 2) * Math.abs(camera.position.z);
+  const visibleWidth = visibleHeight * camera.aspect;
+
+  const worldWidth = (width / window.innerWidth) * visibleWidth;
+  const worldHeight = (height / window.innerHeight) * visibleHeight;
+
+  return { x: pos.x, y: pos.y, w: worldWidth, h: worldHeight };
+};
+
+// دالة لمسح العناصر وبناء النسخ الفيزيائية
+const mapElementsTo3D = async () => {
+  const elements = document.querySelectorAll('.physical-element');
+  
+  for (let i = 0; i < elements.length; i++) {
+    const el = elements[i] as HTMLElement;
+    const rect = el.getBoundingClientRect();
+    const mass = parseFloat(el.getAttribute('data-mass') || '1');
+
+    // تحويل العنصر لصورة
+    const canvasImg = await html2canvas(el, { backgroundColor: null, scale: 2 });
+    const texture = new THREE.CanvasTexture(canvasImg);
+    texture.colorSpace = THREE.SRGBColorSpace;
+
+    // حساب الأبعاد والموقع في الـ 3D
+    const { x, y, w, h } = getThreePosition(rect.left, rect.top, rect.width, rect.height);
+
+    // إنشاء المجسم
+    const geometry = new THREE.PlaneGeometry(w, h);
+    const material = new THREE.MeshPhysicalMaterial({ 
+      map: texture, 
+      transparent: true,
+      side: THREE.DoubleSide,
+      roughness: 0.5,
+      metalness: 0.1
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(x, y, 0);
+    mesh.visible = false; // مخفي في البداية
+    scene.add(mesh);
+
+    // إنشاء الجسم الفيزيائي (صندوق مسطح)
+    const body = new CANNON.Body({
+      mass: mass,
+      shape: new CANNON.Box(new CANNON.Vec3(w / 2, h / 2, 0.05)),
+      position: new CANNON.Vec3(x, y, 0),
+      material: boxPhysMaterial,
+      linearDamping: 0.1,
+      angularDamping: 0.1
+    });
+    // لا نضيفه للعالم (world) الآن، فقط نخزنه
+    
+    physicalElements.push({ mesh, body, element: el });
+  }
+};
+
+// تشغيل المسح بعد تحميل الصفحة
+window.addEventListener('load', () => {
+  setTimeout(mapElementsTo3D, 500); // تأخير بسيط لضمان اكتمال الرندر
+});
+
+// --- لحظة الانهيار والتبديل (The Anti-Gravity Trigger) ---
+const breakIllusion = () => {
+  if (isIllusionBroken || physicalElements.length === 0) return;
+  isIllusionBroken = true;
+
+  // 1. إخفاء الواجهة الخادعة
+  const htmlLayer = document.getElementById('html-illusion-layer');
+  if (htmlLayer) {
+    htmlLayer.style.opacity = '0';
+    setTimeout(() => {
+      htmlLayer.style.display = 'none';
+      // إظهار واجهة الـ SPA الحقيقية
+      const uiLayer = document.getElementById('ui-layer');
+      if (uiLayer) {
+        uiLayer.style.display = 'flex';
+      }
+    }, 500);
+  }
+
+  // 2. إظهار وتفعيل النسخ الفيزيائية (الانهيار)
+  physicalElements.forEach(el => {
+    el.mesh.visible = true;
+    world.addBody(el.body);
+    
+    // إعطاء دفعة عشوائية خفيفة لمحاكاة الانفجار أو فقدان الجاذبية
+    el.body.velocity.set(
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2
+    );
+    el.body.angularVelocity.set(
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2
+    );
+  });
+
+  // 3. تفعيل الجاذبية التصاعدية (Anti-Gravity)
+  targetGravityY = 0.5; // طفو للأعلى
+};
+
+// تفعيل الانهيار عند أول تحريك للماوس أو النقر
+window.addEventListener('mousemove', () => {
+  if (!isIllusionBroken && physicalElements.length > 0) {
+    breakIllusion();
+  }
+}, { once: true });
+
+window.addEventListener('click', () => {
+  if (!isIllusionBroken && physicalElements.length > 0) {
+    breakIllusion();
+  }
+}, { once: true });
+
 const particles: { mesh: THREE.Mesh, body: CANNON.Body }[] = [];
 const particleCount = 40; // زيادة العدد لتأثير أفضل
 
@@ -694,6 +870,80 @@ const openCardModal = (data: any) => {
 
 // تم نقل إخفاء رسالة التحميل إلى دالة initCards
 
+// --- التفاعل والاصطدام (Mouse Interaction for Floating Elements) ---
+let draggedBody: CANNON.Body | null = null;
+let activeMouseConstraint: CANNON.PointToPointConstraint | null = null;
+// جسم فيزيائي وهمي يمثل الماوس في الفضاء لربطه بالعنصر المسحوب
+const mousePhysicsBody = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC });
+world.addBody(mousePhysicsBody);
+
+window.addEventListener('mousedown', (event) => {
+  if (!isIllusionBroken) return;
+  
+  // تحديث موقع الماوس
+  mouseVector2D.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouseVector2D.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouseVector2D, camera);
+
+  // التحقق من اصطدام الماوس بالعناصر (عناصر الواجهة المنهارة + بطاقات المنتجات)
+  const interactableMeshes = [...physicalElements.map(p => p.mesh), ...cards.map(c => c.mesh)];
+  const intersects = raycaster.intersectObjects(interactableMeshes);
+
+  if (intersects.length > 0) {
+    const clickedMesh = intersects[0].object as THREE.Mesh;
+    
+    // البحث عن الـ Body المقابل للـ Mesh
+    let targetBody: CANNON.Body | null = null;
+    const pEl = physicalElements.find(p => p.mesh === clickedMesh);
+    if (pEl) targetBody = pEl.body;
+    else {
+      const cEl = cards.find(c => c.mesh === clickedMesh);
+      if (cEl) targetBody = cEl.body;
+    }
+
+    if (targetBody) {
+      draggedBody = targetBody;
+      
+      // حساب نقطة التقاطع في عالم الفيزياء
+      const hitPoint = intersects[0].point;
+      mousePhysicsBody.position.copy(hitPoint as any);
+
+      // إنشاء القيد (Constraint) لربط الماوس بالجسم
+      activeMouseConstraint = new CANNON.PointToPointConstraint(
+        draggedBody,
+        new CANNON.Vec3(0,0,0), // المركز (يمكن تحسينه ليكون نقطة النقر الدقيقة)
+        mousePhysicsBody,
+        new CANNON.Vec3(0,0,0)
+      );
+      world.addConstraint(activeMouseConstraint);
+    }
+  }
+});
+
+window.addEventListener('mousemove', (event) => {
+  if (draggedBody && activeMouseConstraint) {
+    // تحديث موقع جسم الماوس الفيزيائي ليسحب العنصر معه
+    mouseVector2D.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouseVector2D.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouseVector2D, camera);
+    
+    // إبقاء العنصر على نفس العمق (Z) تقريباً
+    const targetZ = draggedBody.position.z;
+    const distance = (targetZ - camera.position.z) / raycaster.ray.direction.z;
+    const intersectPoint = camera.position.clone().add(raycaster.ray.direction.multiplyScalar(distance));
+    
+    mousePhysicsBody.position.copy(intersectPoint as any);
+  }
+});
+
+window.addEventListener('mouseup', () => {
+  if (activeMouseConstraint) {
+    world.removeConstraint(activeMouseConstraint);
+    activeMouseConstraint = null;
+    draggedBody = null;
+  }
+});
+
 // حلقة التحديث والمصير
 const clock = new THREE.Clock();
 let oldElapsedTime = 0;
@@ -722,6 +972,14 @@ const tick = () => {
 
     // تحديث الفيزياء
     world.step(1 / 60, deltaTime, 3);
+
+    // تحديث عناصر الـ HTML المنهارة (The Illusion Elements)
+    if (isIllusionBroken) {
+      physicalElements.forEach(el => {
+        el.mesh.position.copy(el.body.position as any);
+        el.mesh.quaternion.copy(el.body.quaternion as any);
+      });
+    }
 
     // تحديث الرسوميات بناءً على الفيزياء لجميع البطاقات (وتطبيق Smart Grid Logic)
     for(const card of cards) {
