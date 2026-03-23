@@ -18,6 +18,13 @@ const ODOO_DB = process.env.ODOO_DB || 'tmc_db';
 const ODOO_USER = process.env.ODOO_USER || 'admin';
 const ODOO_PASSWORD = process.env.ODOO_PASSWORD || 'admin';
 
+// Caching System
+let productsCache = {
+  data: null,
+  lastFetch: 0
+};
+const CACHE_DURATION = 60 * 60 * 1000; // 1 Hour in milliseconds
+
 // Helper function to authenticate with Odoo JSON-2 API
 async function authenticateOdoo() {
   const authPayload = {
@@ -54,6 +61,19 @@ async function authenticateOdoo() {
 // Routes
 app.get('/api/products', async (req, res) => {
   try {
+    const now = Date.now();
+    
+    // Check if we have valid cache
+    if (productsCache.data && (now - productsCache.lastFetch < CACHE_DURATION)) {
+      console.log('Serving products from cache');
+      return res.json({
+        status: 'success',
+        source: 'cache',
+        data: productsCache.data
+      });
+    }
+
+    console.log('Fetching fresh products from Odoo...');
     const uid = await authenticateOdoo();
     
     if (!uid) {
@@ -83,7 +103,7 @@ app.get('/api/products', async (req, res) => {
             ]
           ],
           {
-            fields: ['id', 'display_name', 'list_price', 'description_sale', 'image_1920', 'categ_id'],
+            fields: ['id', 'display_name', 'list_price', 'description_sale', 'image_512', 'categ_id'],
             limit: 10 // Limit the number of 3D objects to avoid performance issues
           }
         ]
@@ -109,10 +129,16 @@ app.get('/api/products', async (req, res) => {
       name: product.display_name,
       price: product.list_price,
       description: product.description_sale || 'لا يوجد وصف متاح.',
-      // Odoo sends image_1920 as base64 string without the data URI prefix
-      image: product.image_1920 ? `data:image/png;base64,${product.image_1920}` : null,
+      // Odoo sends image_512 as base64 string without the data URI prefix
+      image: product.image_512 ? `data:image/png;base64,${product.image_512}` : null,
       category: product.categ_id ? product.categ_id[1] : 'عام'
     }));
+
+    // Update Cache
+    if (products.length > 0) {
+      productsCache.data = products;
+      productsCache.lastFetch = Date.now();
+    }
 
     // If Odoo is not reachable or empty during development, fallback to mock data
     if (products.length === 0 && process.env.NODE_ENV !== 'production') {
