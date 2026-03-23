@@ -13,27 +13,80 @@
       <!-- حاوية الرسوميات ثلاثية الأبعاد -->
       <canvas id="webgl-canvas"></canvas>
       
-      <!-- طبقة واجهة المستخدم (UI Layer) -->
+      <!-- طبقة واجهة المستخدم (UI Layer - SPA Structure) -->
       <div id="ui-layer">
         <header class="ui-header">
           <div class="logo">TMC Smart</div>
           <nav>
-            <button class="nav-btn">تواصل معنا</button>
+            <button class="nav-btn" data-target="hero">الرئيسية</button>
+            <button class="nav-btn" data-target="about">من نحن</button>
+            <button class="nav-btn" data-target="products">المنتجات</button>
+            <button class="nav-btn" data-target="contact">تواصل معنا</button>
           </nav>
         </header>
 
-        <div class="scroll-indicator">
-          <span>مرر للأسفل</span>
-          <div class="mouse-icon"></div>
+        <!-- Sections Container -->
+        <div id="sections-container">
+          <!-- Hero Section -->
+          <section id="hero" class="scroll-section active">
+            <div class="content-glass">
+              <h1>Your Keys For Business</h1>
+              <p>نحوّل تعقيدات التكنولوجيا إلى حلول بسيطة وذكية لشركتك.</p>
+              <div class="scroll-indicator">
+                <span>اكتشف المزيد</span>
+                <div class="mouse-icon"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- About Section -->
+          <section id="about" class="scroll-section">
+            <div class="content-glass">
+              <h2>من نحن (TMC Smart)</h2>
+              <p>نحن شركة رائدة في تقديم الحلول التقنية المبتكرة. ندمج بين أحدث التقنيات كـ Odoo ERP وأنظمة الشبكات الذكية لضمان تفوق أعمالك في السوق.</p>
+            </div>
+          </section>
+
+          <!-- Products Section (Interactive 3D Grid) -->
+          <section id="products" class="scroll-section">
+            <div class="content-glass pointer-none">
+              <!-- المحتوى هنا فارغ تقريباً للسماح للمستخدم بالتفاعل مع البطاقات الـ 3D في الخلفية -->
+              <h2>منتجاتنا التقنية</h2>
+              <p>تصفح منتجاتنا واسحب البطاقات للتعرف على التفاصيل.</p>
+            </div>
+          </section>
+
+          <!-- Contact Section -->
+          <section id="contact" class="scroll-section">
+            <div class="content-glass pointer-auto">
+              <h2>تواصل معنا</h2>
+              <form id="contact-form" class="crm-form">
+                <input type="text" placeholder="الاسم" required>
+                <input type="email" placeholder="البريد الإلكتروني" required>
+                <textarea placeholder="رسالتك" required></textarea>
+                <button type="submit" class="cta-btn">إرسال الطلب</button>
+              </form>
+            </div>
+          </section>
         </div>
 
         <!-- النافذة المنبثقة (Modal) لعرض تفاصيل البطاقة -->
         <div id="card-modal" class="modal hidden">
           <div class="modal-content">
             <h2 id="modal-title">اسم الخدمة</h2>
+            <div class="modal-category" id="modal-category">التصنيف</div>
             <p id="modal-desc">وصف الخدمة سيظهر هنا بناءً على البطاقة المحددة.</p>
+            
+            <div id="modal-attributes" class="modal-attributes">
+              <!-- سيتم حقن جدول المواصفات هنا برمجياً -->
+            </div>
+
             <div class="modal-price" id="modal-price">0.00 ر.س</div>
-            <button class="cta-btn" id="modal-close">إغلاق</button>
+            
+            <div class="modal-actions">
+              <button class="cta-btn primary" id="modal-order">اطلب الآن</button>
+              <button class="cta-btn secondary" id="modal-close">إغلاق</button>
+            </div>
           </div>
         </div>
       </div>

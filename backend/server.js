@@ -81,8 +81,7 @@ app.get('/api/products', async (req, res) => {
     }
 
     // Query Odoo for products using JSON-2 API
-    // Filtering by a custom tag or flag indicating it should be shown on the 3D website
-    // Example: searching for product.template where 'is_published' is true (or a custom 'website_3d_visible' field)
+    // We will fetch product template data including categ_id for grid positioning
     const searchPayload = {
       jsonrpc: '2.0',
       method: 'call',
@@ -98,13 +97,15 @@ app.get('/api/products', async (req, res) => {
           [
             [
               ['sale_ok', '=', true],
-              // Add your specific filter here. For example, if you have a tag for 3D:
-              // ['product_tag_ids.name', 'in', ['Website_3D']] 
+              // Add specific category IDs based on the strategy document
+              // Networking (8), Servers (17), Wireless (9)
+              ['categ_id', 'in', [8, 17, 9]] 
             ]
           ],
           {
-            fields: ['id', 'display_name', 'list_price', 'description_sale', 'image_512', 'categ_id'],
-            limit: 10 // Limit the number of 3D objects to avoid performance issues
+            // Add attribute_line_ids to the requested fields
+            fields: ['id', 'display_name', 'list_price', 'description_sale', 'image_512', 'categ_id', 'attribute_line_ids'],
+            limit: 15 // Limit the number of 3D objects to avoid performance issues
           }
         ]
       },
@@ -124,15 +125,25 @@ app.get('/api/products', async (req, res) => {
     }
 
     // Transform Odoo data to match our frontend contract
-    const products = data.result.map(product => ({
-      id: product.id,
-      name: product.display_name,
-      price: product.list_price,
-      description: product.description_sale || 'لا يوجد وصف متاح.',
-      // Odoo sends image_512 as base64 string without the data URI prefix
-      image: product.image_512 ? `data:image/png;base64,${product.image_512}` : null,
-      category: product.categ_id ? product.categ_id[1] : 'عام'
-    }));
+    const products = data.result.map(product => {
+      // Determine the vertical track X position based on Category ID (Strategy Rule)
+      let trackX = 0; // Default (Servers)
+      const catId = product.categ_id ? product.categ_id[0] : 0;
+      if (catId === 8) trackX = -3; // Networking
+      if (catId === 9) trackX = 3;  // Wireless
+
+      return {
+        id: product.id,
+        name: product.display_name,
+        price: product.list_price,
+        description: product.description_sale || 'مواصفات تقنية متقدمة.',
+        image: product.image_512 ? `data:image/png;base64,${product.image_512}` : null,
+        category: product.categ_id ? product.categ_id[1] : 'عام',
+        categoryId: catId,
+        trackX: trackX,
+        attributes: product.attribute_line_ids || [] // Pass attributes for modal display
+      };
+    });
 
     // Update Cache
     if (products.length > 0) {
@@ -149,19 +160,36 @@ app.get('/api/products', async (req, res) => {
           data: [
             {
               id: 101,
-              name: "تصميم الهوية البصرية (Branding)",
-              price: 500.00,
-              description: "نبني لك هوية بصرية متكاملة تعكس رؤية شركتك وتجذب عملاءك.",
-              image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-              category: "Design"
+              name: "سيرفر TMC المتقدم (Server)",
+              price: 15000.00,
+              description: "أداء فائق للشركات الكبيرة.",
+              image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+              category: "Servers",
+              categoryId: 17,
+              trackX: 0,
+              attributes: []
             },
             {
-              id: 102,
-              name: "تطوير تطبيقات الويب (Web App)",
-              price: 1200.00,
-              description: "تطبيقات ويب سريعة، آمنة، ومبنية بأحدث التقنيات.",
+              id: 103,
+              name: "نقاط وصول شبكية (Wireless)",
+              price: 800.00,
+              description: "تغطية واي فاي شاملة وآمنة.",
               image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-              category: "Development"
+              category: "Wireless",
+              categoryId: 9,
+              trackX: 3,
+              attributes: []
+            },
+            {
+              id: 104,
+              name: "معدات شبكات (Networking)",
+              price: 1200.00,
+              description: "بنية تحتية متينة للشبكات.",
+              image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+              category: "Networking",
+              categoryId: 8,
+              trackX: -3,
+              attributes: []
             }
           ]
        });

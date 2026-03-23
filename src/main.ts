@@ -51,31 +51,13 @@ scene.add(directionalLight);
 
 // إعداد محرك الفيزياء (Cannon.js)
 const world = new CANNON.World({
-  gravity: new CANNON.Vec3(0, -9.82, 0), // جاذبية ابتدائية طبيعية
+  gravity: new CANNON.Vec3(0, 0.5, 0), // جاذبية طافية للأعلى مبدئياً لتأثير Anti-Gravity
 });
 
-// متغيرات للتحكم بالجاذبية عبر التمرير (Scroll)
-let targetGravityY = -9.82;
-let currentScrollProgress = 0;
+// متغيرات للتحكم بالجاذبية
+let targetGravityY = 0.5;
 
-// الاستماع لحدث التمرير لحساب النسبة المئوية
-window.addEventListener('scroll', () => {
-  const maxScroll = document.body.scrollHeight - window.innerHeight;
-  if (maxScroll > 0) {
-    currentScrollProgress = window.scrollY / maxScroll;
-  } else {
-    currentScrollProgress = 0;
-  }
-  
-  // تحويل النسبة (0 إلى 1) إلى جاذبية (من -9.82 إلى +2 مثلاً)
-  // إذا كان التمرير 0 -> الجاذبية -9.82 (سقوط)
-  // إذا كان التمرير 0.5 -> الجاذبية 0 (انعدام وزن)
-  // إذا كان التمرير 1 -> الجاذبية +2 (طفو خفيف للأعلى)
-  targetGravityY = THREE.MathUtils.lerp(-9.82, 2, currentScrollProgress);
-});
-
-// لجعل الصفحة قابلة للتمرير للاختبار
-document.body.style.height = '300vh';
+// تم إزالة مستمع التمرير القديم (scroll) لأننا انتقلنا إلى Scroll-jacking
 
 // إعداد خامة (Material) للحوائط والمكعبات للتحكم بالارتداد
 const wallMaterial = new CANNON.Material('wallMaterial');
@@ -176,6 +158,124 @@ const createCardMaterial = (base64Texture?: string) => {
 // متغير للتحكم بتفعيل الفيزياء (يبدأ كـ false حتى ينتهي ترتيب البطاقات)
 let physicsEnabled = false;
 
+// --- طبقة فيزياء الخلفية (Background Physics Layer - Anti-Gravity) ---
+const particles: { mesh: THREE.Mesh, body: CANNON.Body }[] = [];
+const particleCount = 20;
+
+const createBackgroundParticles = () => {
+  const geometries = [
+    new THREE.IcosahedronGeometry(0.3, 0),
+    new THREE.TorusGeometry(0.3, 0.1, 16, 100),
+    new THREE.OctahedronGeometry(0.3, 0)
+  ];
+  
+  const material = new THREE.MeshPhysicalMaterial({
+    color: '#0055ff',
+    metalness: 0.8,
+    roughness: 0.2,
+    transparent: true,
+    opacity: 0.6, // شبه شفافة لكي لا تزعج النظر
+  });
+
+  for (let i = 0; i < particleCount; i++) {
+    const geo = geometries[Math.floor(Math.random() * geometries.length)];
+    const mesh = new THREE.Mesh(geo, material);
+    
+    // موقع عشوائي في الفضاء
+    const x = (Math.random() - 0.5) * 15;
+    const y = (Math.random() - 0.5) * 15;
+    const z = (Math.random() - 0.5) * 5 - 2; // خلف البطاقات قليلاً
+    
+    mesh.position.set(x, y, z);
+    scene.add(mesh);
+
+    const body = new CANNON.Body({
+      mass: 0.1, // خفيفة جداً
+      shape: new CANNON.Sphere(0.4),
+      position: new CANNON.Vec3(x, y, z),
+      linearDamping: 0.1,
+      angularDamping: 0.1
+    });
+    
+    world.addBody(body);
+    particles.push({ mesh, body });
+  }
+};
+createBackgroundParticles();
+
+// --- نظام التنقل (Navigation & Scroll-jacking) ---
+let currentSection = 'hero';
+const sections = document.querySelectorAll('.scroll-section');
+const navBtns = document.querySelectorAll('.nav-btn');
+
+const navigateTo = (sectionId: string) => {
+  currentSection = sectionId;
+  
+  // تحديث الـ UI
+  sections.forEach(sec => {
+    if (sec.id === sectionId) {
+      sec.classList.add('active');
+    } else {
+      sec.classList.remove('active');
+    }
+  });
+
+  // تحديث حالة الفيزياء بناءً على القسم
+  if (sectionId === 'products') {
+    // تفعيل الجاذبية والفيزياء في قسم المنتجات
+    if (!physicsEnabled && cards.length > 0) {
+       enablePhysics();
+    }
+    // إخفاء تأثير الضباب إذا كان موجوداً
+    canvasElement.classList.remove('blurred');
+  } else {
+    // في الأقسام الأخرى، البطاقات قد تطير بعيداً أو نوقف الجاذبية
+    // لتأثير Anti-Gravity، سنجعل الجاذبية طافية للأعلى ببطء
+    targetGravityY = 0.5;
+    canvasElement.classList.add('blurred'); // التركيز على المحتوى النصي
+  }
+};
+
+navBtns.forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    const target = (e.target as HTMLElement).getAttribute('data-target');
+    if (target) navigateTo(target);
+  });
+});
+
+// التمرير بالماوس (Scroll-jacking) للتنقل بين الأقسام
+const sectionOrder = ['hero', 'about', 'products', 'contact'];
+let isScrolling = false;
+
+window.addEventListener('wheel', (e) => {
+  if (isScrolling) return;
+  
+  const currentIndex = sectionOrder.indexOf(currentSection);
+  let nextIndex = currentIndex;
+
+  if (e.deltaY > 0) {
+    // تمرير للأسفل
+    nextIndex = Math.min(currentIndex + 1, sectionOrder.length - 1);
+  } else {
+    // تمرير للأعلى
+    nextIndex = Math.max(currentIndex - 1, 0);
+  }
+
+  if (nextIndex !== currentIndex) {
+    isScrolling = true;
+    navigateTo(sectionOrder[nextIndex]);
+    
+    // منع التمرير السريع المتتالي
+    setTimeout(() => {
+      isScrolling = false;
+    }, 1000);
+  }
+});
+
+// تعطيل التمرير الطبيعي للصفحة
+document.body.style.overflow = 'hidden';
+document.body.style.height = '100vh';
+
 // إنشاء مجسمات "بطاقات الخدمات" ديناميكياً بناءً على بيانات Odoo
 const cards: { mesh: THREE.Mesh, body: CANNON.Body, data: any }[] = [];
 const cardGeometry = new THREE.BoxGeometry(2, 3, 0.2); // شكل يشبه بطاقة أو هاتف
@@ -222,14 +322,11 @@ const initCards = async () => {
 
 // حركة الدخول والترتيب (Entrance Animation)
 const animateEntrance = () => {
-  const totalCards = cards.length;
-  // مسافة الانتشار بناءً على عدد البطاقات (توزيع أفقي)
-  const spread = Math.min(totalCards * 2.5, 10); 
-  
   cards.forEach((card, index) => {
-    // حساب الموضع النهائي في الترتيب المبدئي (Grid/Line أفقي)
-    const targetX = -spread/2 + (spread / Math.max(1, totalCards - 1)) * index + (totalCards === 1 ? spread/2 : 0);
-    const targetY = 2; // طافية في منتصف الشاشة تقريباً
+    // استخدام المسار العمودي (trackX) المخصص لكل فئة
+    // تم تمرير الـ trackX من الـ Backend
+    const targetX = card.data.trackX !== undefined ? card.data.trackX : 0;
+    const targetY = 2 + (Math.random() - 0.5) * 4; // توزيع عشوائي طفيف على محور Y ضمن المسار العمودي
     const targetZ = 0;
 
     // استخدام GSAP لتحريك الـ Mesh
@@ -245,14 +342,14 @@ const animateEntrance = () => {
     gsap.to(card.mesh.rotation, {
       x: 0, // اعتدال البطاقة
       y: Math.PI * 2, // دورة كاملة مبهرة
-      z: (Math.random() - 0.5) * 0.2, // ميلان عشوائي خفيف للجمالية
+      z: 0, // إلغاء الميلان العشوائي في وضع الـ Grid
       duration: 1.5,
       delay: index * 0.2,
       ease: "power3.out",
       onComplete: () => {
         // بعد انتهاء حركة آخر بطاقة
-        if (index === totalCards - 1) {
-          // ننتظر ثانيتين ليقرأ المستخدم البطاقات، ثم نفعل الفيزياء
+        if (index === cards.length - 1) {
+          // ننتظر ثانيتين ليقرأ المستخدم البطاقات، ثم نفعل الفيزياء (التي تم تعديلها للعمل كمسارات عمودية)
           setTimeout(enablePhysics, 2000);
         }
       }
@@ -266,9 +363,13 @@ const enablePhysics = () => {
     // نقل موقع الـ Mesh الحالي إلى الـ Body الفيزيائي
     card.body.position.copy(card.mesh.position as any);
     card.body.quaternion.copy(card.mesh.quaternion as any);
-    // إعطاء دفعة بسيطة عشوائية عند بدء السقوط
-    card.body.velocity.set((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 0);
-    card.body.angularVelocity.set((Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5));
+    // إعطاء دفعة بسيطة عشوائية على محور Y فقط (للحفاظ على المسار العمودي)
+    card.body.velocity.set(0, (Math.random() - 0.5) * 2, 0);
+    // إيقاف الدوران للحفاظ على ترتيب الشبكة (Grid)
+    card.body.angularVelocity.set(0, 0, 0);
+    
+    // تقييد الحركة على المحور X (Smart Grid Logic)
+    // سنجعل الـ Damping عالياً جداً على X ونثبت السرعة، أو نقوم بتحديث الـ position برمجياً في الـ tick
     
     world.addBody(card.body);
   });
@@ -339,9 +440,12 @@ const CLICK_TIME_THRESHOLD = 200; // ميلي ثانية (إذا كانت الض
 // عناصر الـ UI
 const modal = document.getElementById('card-modal') as HTMLDivElement;
 const modalTitle = document.getElementById('modal-title') as HTMLHeadingElement;
+const modalCategory = document.getElementById('modal-category') as HTMLDivElement;
 const modalDesc = document.getElementById('modal-desc') as HTMLParagraphElement;
+const modalAttributes = document.getElementById('modal-attributes') as HTMLDivElement;
 const modalPrice = document.getElementById('modal-price') as HTMLDivElement;
 const modalClose = document.getElementById('modal-close') as HTMLButtonElement;
+const modalOrder = document.getElementById('modal-order') as HTMLButtonElement;
 const canvasElement = document.getElementById('webgl-canvas') as HTMLCanvasElement; // للحصول على عنصر الـ Canvas
 
 // إغلاق النافذة
@@ -489,9 +593,33 @@ window.addEventListener('pointerup', () => {
 
 // دالة فتح النافذة المنبثقة مع بيانات Odoo
 const openCardModal = (data: any) => {
-  modalTitle.textContent = data.name; // تغير من display_name إلى name بناءً على الـ Contract
-  modalDesc.textContent = data.description; // تغير من description_sale إلى description
-  modalPrice.textContent = `${data.price} ر.س`; // تغير من list_price إلى price
+  modalTitle.textContent = data.name;
+  modalCategory.textContent = data.category;
+  modalDesc.textContent = data.description;
+  
+  // بناء جدول المواصفات
+  if (data.attributes && data.attributes.length > 0) {
+    let tableHTML = '<table><tbody>';
+    // محاكاة عرض المواصفات (Odoo يرسل ID المواصفات، في الإنتاج يجب عمل Fetch لتفاصيلها أو إرسالها من الـ Backend كـ Key/Value)
+    // هنا نضع مثالاً بسيطاً
+    data.attributes.forEach((_attr: any, index: number) => {
+      tableHTML += `<tr><th>مواصفة ${index + 1}</th><td>تفاصيل تقنية متقدمة</td></tr>`;
+    });
+    tableHTML += '</tbody></table>';
+    modalAttributes.innerHTML = tableHTML;
+    modalAttributes.style.display = 'block';
+  } else {
+    modalAttributes.style.display = 'none';
+  }
+
+  modalPrice.textContent = `${data.price} ر.س`;
+  
+  // تحديث رابط زر الطلب (يوجه للواتساب كمثال مع اسم المنتج)
+  modalOrder.onclick = () => {
+    const message = encodeURIComponent(`مرحباً، أريد طلب: ${data.name}`);
+    window.open(`https://wa.me/1234567890?text=${message}`, '_blank');
+  };
+
   modal.classList.remove('hidden');
   canvasElement.classList.add('blurred'); // إضافة تأثير الضباب
 };
@@ -527,10 +655,35 @@ const tick = () => {
     // تحديث الفيزياء
     world.step(1 / 60, deltaTime, 3);
 
-    // تحديث الرسوميات بناءً على الفيزياء لجميع البطاقات
+    // تحديث الرسوميات بناءً على الفيزياء لجميع البطاقات (وتطبيق Smart Grid Logic)
     for(const card of cards) {
+      // إجبار البطاقة على البقاء في المسار العمودي المخصص لها
+      if (card.data.trackX !== undefined && currentSection === 'products') {
+        card.body.position.x = card.data.trackX;
+        card.body.velocity.x = 0; // منع الحركة الأفقية تماماً
+        // منع الدوران للحفاظ على ترتيب الشبكة
+        card.body.quaternion.setFromEuler(0, 0, 0);
+        card.body.angularVelocity.set(0, 0, 0);
+      }
+
       card.mesh.position.copy(card.body.position as any);
       card.mesh.quaternion.copy(card.body.quaternion as any);
+    }
+  }
+
+  // تحديث الجسيمات الخلفية دائماً (تعمل حتى قبل تفعيل البطاقات)
+  for(const p of particles) {
+    p.mesh.position.copy(p.body.position as any);
+    p.mesh.quaternion.copy(p.body.quaternion as any);
+    
+    // إذا خرج الجسيم من الشاشة للأعلى بسبب انعدام الجاذبية، نعيده من الأسفل
+    if (p.body.position.y > 15) {
+      p.body.position.y = -15;
+      p.body.velocity.set(0,0,0);
+    }
+    if (p.body.position.y < -15) {
+      p.body.position.y = 15;
+      p.body.velocity.set(0,0,0);
     }
   }
 
