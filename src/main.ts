@@ -380,17 +380,22 @@ const animateEntrance = () => {
   if (cardsEntranceDone) return;
   cardsEntranceDone = true;
 
+  // جلب البطاقات للأمام لتكون أقرب للكاميرا وأكثر وضوحاً
+  const cardZPosition = 2.0;
+
   cards.forEach((card, index) => {
     card.mesh.visible = true; // إظهار البطاقة قبل بدء الحركة
     
     // استخدام المسار العمودي (trackX) المخصص لكل فئة
     // تم تمرير الـ trackX من الـ Backend
     const targetX = card.data.trackX !== undefined ? card.data.trackX : 0;
-    const targetY = 2 + (Math.random() - 0.5) * 4; // توزيع عشوائي طفيف على محور Y ضمن المسار العمودي
-    const targetZ = 0;
+    const targetY = 1 + (Math.random() - 0.5) * 3; // توزيع عشوائي طفيف على محور Y
+    const targetZ = cardZPosition;
 
     // وضع ابتدائي للبطاقة قبل الحركة (تأتي من الأعلى)
     card.mesh.position.set(targetX, 15 + Math.random() * 5, targetZ);
+    // تحديث موضع الجسم الفيزيائي ليتطابق مع الـ Mesh
+    card.body.position.set(targetX, 15 + Math.random() * 5, targetZ);
 
     // استخدام GSAP لتحريك الـ Mesh
     gsap.to(card.mesh.position, {
@@ -720,10 +725,12 @@ const tick = () => {
 
     // تحديث الرسوميات بناءً على الفيزياء لجميع البطاقات (وتطبيق Smart Grid Logic)
     for(const card of cards) {
-      // إجبار البطاقة على البقاء في المسار العمودي المخصص لها
+      // إجبار البطاقة على البقاء في المسار العمودي المخصص لها وفي مستوى Z متقدم
       if (card.data.trackX !== undefined && currentSection === 'products') {
         card.body.position.x = card.data.trackX;
+        card.body.position.z = 2.0; // تثبيت الـ Z لتبقى في المقدمة دائماً
         card.body.velocity.x = 0; // منع الحركة الأفقية تماماً
+        card.body.velocity.z = 0; // منع الحركة في العمق
         // منع الدوران للحفاظ على ترتيب الشبكة
         card.body.quaternion.setFromEuler(0, 0, 0);
         card.body.angularVelocity.set(0, 0, 0);
