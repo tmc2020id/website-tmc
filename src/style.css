@@ -30,6 +30,12 @@ body {
   height: 100vh;
   z-index: 1; /* خلف الـ UI */
   outline: none;
+  transition: filter 0.3s ease; /* تأثير ناعم عند تطبيق الضباب */
+}
+
+/* فئة الضباب (تُضاف برمجياً عند فتح النافذة) */
+#webgl-canvas.blurred {
+  filter: blur(8px) brightness(0.8);
 }
 
 /* طبقة واجهة المستخدم */

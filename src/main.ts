@@ -2,6 +2,7 @@ import './style.css';
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import gsap from 'gsap';
 
 // إعداد المشهد الأساسي
 const canvas = document.querySelector('#webgl-canvas') as HTMLCanvasElement;
@@ -172,6 +173,9 @@ const createCardMaterial = (base64Texture?: string) => {
   });
 };
 
+// متغير للتحكم بتفعيل الفيزياء (يبدأ كـ false حتى ينتهي ترتيب البطاقات)
+let physicsEnabled = false;
+
 // إنشاء مجسمات "بطاقات الخدمات" ديناميكياً بناءً على بيانات Odoo
 const cards: { mesh: THREE.Mesh, body: CANNON.Body, data: any }[] = [];
 const cardGeometry = new THREE.BoxGeometry(2, 3, 0.2); // شكل يشبه بطاقة أو هاتف
@@ -179,37 +183,29 @@ const cardGeometry = new THREE.BoxGeometry(2, 3, 0.2); // شكل يشبه بطا
 const initCards = async () => {
   const liveData = await fetchOdooData();
 
-  liveData.forEach((service: any, index: number) => {
+  liveData.forEach((service: any) => {
     const material = createCardMaterial(service.image); // تغيرت من image_1920 إلى image حسب الـ Contract الجديد
     const mesh = new THREE.Mesh(cardGeometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     
-    // توزيع البطاقات بشكل مبدئي (توزيع عشوائي آمن ضمن حدود الشاشة)
-    const xPos = (Math.random() - 0.5) * 4; 
-    const yPos = 5 + index * 2;
+    // وضع البطاقة خارج الشاشة في البداية (للأعلى)
+    mesh.position.set(0, 15, 0);
+    mesh.rotation.set(Math.PI, 0, 0); // مقلوبة في البداية
     
     scene.add(mesh);
 
+    // إنشاء الجسم الفيزيائي ولكن لا نضيفه للعالم (world) فوراً
     const body = new CANNON.Body({
       mass: 1 + Math.random() * 2, // كتلة متغيرة قليلاً لتعطي تنوعاً في الحركة
       shape: new CANNON.Box(new CANNON.Vec3(1, 1.5, 0.1)),
-      position: new CANNON.Vec3(xPos, yPos, 0),
+      position: new CANNON.Vec3(0, 15, 0), // نفس الموضع المبدئي
       material: boxPhysMaterial,
       linearDamping: 0.5,
       angularDamping: 0.5
     });
     
-    // إعطاء دوران عشوائي ابتدائي للبطاقة
-    body.quaternion.setFromEuler(
-      Math.random() * Math.PI, 
-      Math.random() * Math.PI, 
-      Math.random() * Math.PI
-    );
-    
-    world.addBody(body);
-    
-    // تخزين البيانات مع البطاقة لسهولة الوصول لها عند النقر
+    // تخزين البيانات مع البطاقة
     cards.push({ mesh, body, data: service });
   });
 
@@ -218,8 +214,65 @@ const initCards = async () => {
     loading.style.opacity = '0';
     setTimeout(() => {
       loading.style.display = 'none';
+      // بدء حركة الدخول بعد إخفاء شاشة التحميل
+      animateEntrance();
     }, 500); // توافق مع تأثير الـ CSS transition
   }
+};
+
+// حركة الدخول والترتيب (Entrance Animation)
+const animateEntrance = () => {
+  const totalCards = cards.length;
+  // مسافة الانتشار بناءً على عدد البطاقات (توزيع أفقي)
+  const spread = Math.min(totalCards * 2.5, 10); 
+  
+  cards.forEach((card, index) => {
+    // حساب الموضع النهائي في الترتيب المبدئي (Grid/Line أفقي)
+    const targetX = -spread/2 + (spread / Math.max(1, totalCards - 1)) * index + (totalCards === 1 ? spread/2 : 0);
+    const targetY = 2; // طافية في منتصف الشاشة تقريباً
+    const targetZ = 0;
+
+    // استخدام GSAP لتحريك الـ Mesh
+    gsap.to(card.mesh.position, {
+      x: targetX,
+      y: targetY,
+      z: targetZ,
+      duration: 1.5,
+      delay: index * 0.2, // دخول متتالي (واحدة تلو الأخرى)
+      ease: "power3.out"
+    });
+
+    gsap.to(card.mesh.rotation, {
+      x: 0, // اعتدال البطاقة
+      y: Math.PI * 2, // دورة كاملة مبهرة
+      z: (Math.random() - 0.5) * 0.2, // ميلان عشوائي خفيف للجمالية
+      duration: 1.5,
+      delay: index * 0.2,
+      ease: "power3.out",
+      onComplete: () => {
+        // بعد انتهاء حركة آخر بطاقة
+        if (index === totalCards - 1) {
+          // ننتظر ثانيتين ليقرأ المستخدم البطاقات، ثم نفعل الفيزياء
+          setTimeout(enablePhysics, 2000);
+        }
+      }
+    });
+  });
+};
+
+// تفعيل الفيزياء بعد انتهاء الترتيب
+const enablePhysics = () => {
+  cards.forEach(card => {
+    // نقل موقع الـ Mesh الحالي إلى الـ Body الفيزيائي
+    card.body.position.copy(card.mesh.position as any);
+    card.body.quaternion.copy(card.mesh.quaternion as any);
+    // إعطاء دفعة بسيطة عشوائية عند بدء السقوط
+    card.body.velocity.set((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 0);
+    card.body.angularVelocity.set((Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5));
+    
+    world.addBody(card.body);
+  });
+  physicsEnabled = true;
 };
 
 // بدء التهيئة
@@ -289,10 +342,12 @@ const modalTitle = document.getElementById('modal-title') as HTMLHeadingElement;
 const modalDesc = document.getElementById('modal-desc') as HTMLParagraphElement;
 const modalPrice = document.getElementById('modal-price') as HTMLDivElement;
 const modalClose = document.getElementById('modal-close') as HTMLButtonElement;
+const canvasElement = document.getElementById('webgl-canvas') as HTMLCanvasElement; // للحصول على عنصر الـ Canvas
 
 // إغلاق النافذة
 modalClose?.addEventListener('click', () => {
   modal.classList.add('hidden');
+  canvasElement.classList.remove('blurred'); // إزالة تأثير الضباب
 });
 
 // كائن وهمي في Cannon.js يمثل موقع الماوس لربط القيد (Constraint) به
@@ -438,6 +493,7 @@ const openCardModal = (data: any) => {
   modalDesc.textContent = data.description; // تغير من description_sale إلى description
   modalPrice.textContent = `${data.price} ر.س`; // تغير من list_price إلى price
   modal.classList.remove('hidden');
+  canvasElement.classList.add('blurred'); // إضافة تأثير الضباب
 };
 
 // تم نقل إخفاء رسالة التحميل إلى دالة initCards
@@ -451,30 +507,31 @@ const tick = () => {
   const deltaTime = elapsedTime - oldElapsedTime;
   oldElapsedTime = elapsedTime;
 
-  // استيفاء (Lerp) ناعم للجاذبية الحالية لتصل للهدف المستخلص من التمرير
-  world.gravity.y = THREE.MathUtils.lerp(world.gravity.y, targetGravityY, 0.05);
+  if (physicsEnabled) {
+    // استيفاء (Lerp) ناعم للجاذبية الحالية لتصل للهدف المستخلص من التمرير
+    world.gravity.y = THREE.MathUtils.lerp(world.gravity.y, targetGravityY, 0.05);
 
-  // تحديث مقاومة الهواء (linearDamping) بناءً على الجاذبية الحالية
-  // كلما اقتربت الجاذبية من الصفر، زادت مقاومة الهواء لمحاكاة انعدام الوزن أو الطفو في الماء
-  const isZeroGravity = Math.abs(world.gravity.y) < 2.0;
-  
-  for(const card of cards) {
-    if (isZeroGravity) {
-        card.body.linearDamping = THREE.MathUtils.lerp(card.body.linearDamping, 0.8, 0.05);
-        card.body.angularDamping = THREE.MathUtils.lerp(card.body.angularDamping, 0.8, 0.05);
-    } else {
-        card.body.linearDamping = THREE.MathUtils.lerp(card.body.linearDamping, 0.1, 0.05);
-        card.body.angularDamping = THREE.MathUtils.lerp(card.body.angularDamping, 0.1, 0.05);
+    // تحديث مقاومة الهواء (linearDamping) بناءً على الجاذبية الحالية
+    const isZeroGravity = Math.abs(world.gravity.y) < 2.0;
+    
+    for(const card of cards) {
+      if (isZeroGravity) {
+          card.body.linearDamping = THREE.MathUtils.lerp(card.body.linearDamping, 0.8, 0.05);
+          card.body.angularDamping = THREE.MathUtils.lerp(card.body.angularDamping, 0.8, 0.05);
+      } else {
+          card.body.linearDamping = THREE.MathUtils.lerp(card.body.linearDamping, 0.1, 0.05);
+          card.body.angularDamping = THREE.MathUtils.lerp(card.body.angularDamping, 0.1, 0.05);
+      }
     }
-  }
 
-  // تحديث الفيزياء
-  world.step(1 / 60, deltaTime, 3);
+    // تحديث الفيزياء
+    world.step(1 / 60, deltaTime, 3);
 
-  // تحديث الرسوميات بناءً على الفيزياء لجميع البطاقات
-  for(const card of cards) {
-    card.mesh.position.copy(card.body.position as any);
-    card.mesh.quaternion.copy(card.body.quaternion as any);
+    // تحديث الرسوميات بناءً على الفيزياء لجميع البطاقات
+    for(const card of cards) {
+      card.mesh.position.copy(card.body.position as any);
+      card.mesh.quaternion.copy(card.body.quaternion as any);
+    }
   }
 
   // Render
